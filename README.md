@@ -17,6 +17,7 @@ O pacote não altera a VPN, o Pi-hole, o Stremio, o DNS público, o NAT nem a fi
 sudo apt install ./stremioproxywan_0.1.0_all.deb
 sudo stremioproxywan configure \
  --set wan_host=stream.exemplo.com \
+ --set wan_address_mode=ddns \
  --set wan_port=443 \
  --set lan_host=192.168.10.20 \
  --set lan_http_port=8080 \
@@ -33,6 +34,26 @@ sudo stremioproxywan apply
 ~~~
 
 Os valores de exemplo não são destinos operacionais. É obrigatório configurar os endereços reais antes de aplicar. A instalação do pacote **não altera o Nginx automaticamente**.
+
+## WAN com IP dinâmico (DDNS)
+
+O modo `wan_address_mode=ddns` permite publicar o serviço através de um hostname estável, por exemplo `stream.meudominio.net`, mesmo quando o ISP altera o IP público. Configure `wan_host` com esse hostname e mantenha um actualizador DDNS no router, no serviço DNS ou num agente externo. **O Nginx não precisa de conhecer o IP WAN actual nem precisa de ser reiniciado quando esse IP muda.**
+
+Exemplo:
+
+~~~bash
+sudo stremioproxywan configure --set wan_address_mode=ddns --set wan_host=stream.meudominio.net
+sudo stremioproxywan check
+sudo stremioproxywan apply
+~~~
+
+Modos de endereço WAN:
+
+- `ddns`: hostname com IP WAN variável, actualizado externamente.
+- `static`: hostname com DNS público estático.
+- `direct_ip`: acesso por IPv4 WAN, usando `wan_host` igual ao IPv4. Se esse IP mudar, será necessário descobrir e comunicar o novo IP; não existe nome estável.
+
+**Atenção:** a actualização DDNS não atravessa CGNAT, não cria regras NAT/firewall e não substitui um certificado válido. Em `selfsigned`, o certificado inclui SAN para o hostname ou IP configurado; em `trusted`, o certificado precisa de cobrir o mesmo hostname/IP. O pacote não guarda credenciais DDNS nem modifica a WAN do router.
 
 ## WAN com ou sem certificado público
 
