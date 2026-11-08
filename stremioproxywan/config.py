@@ -6,6 +6,7 @@ from urllib.parse import quote
 CONFIG_FILE=Path('/etc/stremioproxywan/config.json')
 DEFAULTS={
  'wan_host':'str.example.com','wan_port':443,'wan_tls_mode':'selfsigned',
+ 'wan_address_mode':'ddns',
  'wan_cert':'/etc/stremioproxywan/tls/fullchain.pem',
  'wan_key':'/etc/stremioproxywan/tls/privkey.pem',
  'lan_host':'lan.example.invalid','lan_http_port':8080,'lan_core_port':11470,
@@ -28,6 +29,11 @@ def validate(raw):
   if not v.is_absolute() or '"' in str(v) or '\n' in str(v) or '\r' in str(v): raise ValueError('Invalid path: '+k)
   d[k]=str(v)
  if d['wan_tls_mode'] not in ('trusted','selfsigned'): raise ValueError('Invalid WAN TLS mode')
+ if d['wan_address_mode'] not in ('ddns','static','direct_ip'): raise ValueError('Invalid WAN address mode')
+ if d['wan_address_mode']=='direct_ip':
+  import ipaddress
+  try: ipaddress.IPv4Address(d['wan_host'])
+  except ipaddress.AddressValueError as exc: raise ValueError('direct_ip requires WAN IPv4') from exc
  if d['backend_scheme'] not in ('http','https'): raise ValueError('Invalid backend scheme')
  if d['http_policy'] not in ('disabled','redirect','legacy_proxy'): raise ValueError('Invalid HTTP policy')
  return d
