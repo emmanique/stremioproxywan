@@ -8,9 +8,9 @@ DEFAULTS={
  'wan_host':'str.example.com','wan_port':443,'wan_tls_mode':'selfsigned',
  'wan_cert':'/etc/stremioproxywan/tls/fullchain.pem',
  'wan_key':'/etc/stremioproxywan/tls/privkey.pem',
- 'lan_host':'192.168.1.199','lan_http_port':8080,'lan_core_port':11470,
- 'backend_scheme':'https','backend_host':'192-168-1-199.example.stremio.rocks',
- 'backend_port':12470,'backend_tls_name':'192-168-1-199.example.stremio.rocks',
+ 'lan_host':'lan.example.invalid','lan_http_port':8080,'lan_core_port':11470,
+ 'backend_scheme':'https','backend_host':'backend.example.invalid',
+ 'backend_port':12470,'backend_tls_name':'backend.example.invalid',
  'backend_ca':'/etc/ssl/certs/ca-certificates.crt','http_policy':'disabled'
 }
 HOST_RE=re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9.\-]{0,252}$')
@@ -31,6 +31,14 @@ def validate(raw):
  if d['backend_scheme'] not in ('http','https'): raise ValueError('Invalid backend scheme')
  if d['http_policy'] not in ('disabled','redirect','legacy_proxy'): raise ValueError('Invalid HTTP policy')
  return d
+def require_deployment_values(d):
+    if d['wan_host'].endswith('.example.com') or d['wan_host'].endswith('.invalid'):
+        raise ValueError('Configure an actual WAN hostname or IP')
+    if d['lan_host'].endswith('.invalid') or d['backend_host'].endswith('.invalid'):
+        raise ValueError('Configure the LAN and backend addresses')
+    if d['backend_scheme']=='https' and d['backend_tls_name'].endswith('.invalid'):
+        raise ValueError('Configure the backend TLS hostname')
+
 def nginx_config(raw):
  d=validate(raw)
  w,lan,b=d['wan_host'],d['lan_host'],d['backend_host']
