@@ -20,6 +20,20 @@ class ConfigTest(unittest.TestCase):
     def test_invalid_host_rejected(self):
         for value in ('good.example;return 200','https://foo','foo\nroot /','../foo'):
             with self.assertRaises(ValueError): validate({**DEFAULTS,'wan_host':value})
+    def test_dynamic_wan_ddns(self):
+        d={**DEFAULTS,'wan_host':'video.dyndns.org','wan_address_mode':'ddns',
+           'lan_host':'10.25.1.50','backend_host':'internal.example.org',
+           'backend_tls_name':'internal.example.org'}
+        require_deployment_values(validate(d))
+        config=nginx_config(d)
+        self.assertIn('server_name video.dyndns.org;',config)
+        self.assertNotIn('192.168.1.199',config)
+        self.assertIn('http%3A%2F%2F10.25.1.50%3A11470',config)
+    def test_direct_wan_ipv4(self):
+        config=nginx_config({**DEFAULTS,'wan_host':'203.0.113.15','wan_address_mode':'direct_ip'})
+        self.assertIn('server_name 203.0.113.15;',config)
+        with self.assertRaises(ValueError):
+            validate({**DEFAULTS,'wan_host':'video.dyndns.org','wan_address_mode':'direct_ip'})
     def test_invalid_port_rejected(self):
         with self.assertRaises(ValueError): validate({**DEFAULTS,'wan_port':77777})
 if __name__=='__main__': unittest.main()
