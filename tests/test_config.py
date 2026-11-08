@@ -12,6 +12,7 @@ class ConfigTest(unittest.TestCase):
         d={**DEFAULTS,'wan_host':'media.example.org','wan_port':8443,'lan_host':'10.20.30.40','lan_core_port':11500,'backend_host':'backend.example.org','backend_tls_name':'backend.example.org','backend_port':12500,'http_policy':'redirect'}
         result=nginx_config(d)
         self.assertIn('listen 8443 ssl http2;',result)
+        self.assertIn('https%3A%2F%2Fmedia\\.example\\.org%3A8443',result)
         self.assertIn('http%3A%2F%2F10.20.30.40%3A11500',result)
         self.assertIn('proxy_pass https://backend.example.org:12500;',result)
         self.assertIn('return 301 https://media.example.org:8443',result)
