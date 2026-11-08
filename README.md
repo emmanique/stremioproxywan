@@ -1,39 +1,80 @@
-# Stremio Proxy WAN
+# StremioProxyWAN
 
-Reverse proxy Nginx para disponibilizar o Stremio WebPlayer através de `https://str.lusosolutions.com`, mantendo o Stremio Server na LAN `192.168.1.199`.
+**Distribuição genérica v0.1.0** para Debian/Ubuntu. Nginx reverse proxy para Stremio WebPlayer, com autenticação WAN, sessão assinada para HLS e domínios/IP WAN e LAN totalmente configuráveis.
 
-## Arquitectura operacional validada em 2026-11-08
+## Arquitectura
 
-| Percurso | Origem | Destino |
-| --- | --- | --- |
-| WebPlayer HTTPS externo | `https://str.lusosolutions.com` | `https://192-168-1-199.519b6502d940.stremio.rocks:12470` |
-| HTTP pré-existente | `http://str.lusosolutions.com` | `http://192.168.1.199:8080` |
-| Streaming interno na Stremio App | LAN | `https://192-168-1-199.519b6502d940.stremio.rocks:12470` |
-| WebPlayer interno | LAN | `http://192.168.1.199:8080` |
+~~~text
+Browser WAN -> HTTPS Nginx Proxy -> Stremio WebPlayer/Core na LAN
+Stremio App interna -> endpoint HTTPS do Core na LAN (directo)
+~~~
 
-A autenticação Basic permanece no HTTPS; uma sessão HMAC-SHA256 por cookie `Secure; HttpOnly; SameSite=None` (TTL de 12 horas) autoriza o WebPlayer e as playlists/segmentos HLS. O verificador de sessão escuta exclusivamente em `127.0.0.1:18765`. Tokens não-Basic são preservados na passagem para o backend; passwords Basic não são encaminhadas. O proxy mantém `Range`/`If-Range`, certificados TLS verificados e pedidos WebSocket.
+O pacote não altera a VPN, o Pi-hole, o Stremio, o DNS público, o NAT nem a firewall.
 
-No percurso `/hlsv2/`, URLs `mediaURL` que apontam para o domínio público são resolvidas para a origem interna `192.168.1.199:11470`. Isso evita que o próprio FFmpeg volte a chamar o domínio público sem o cookie da sessão. Esta reescrita está limitada ao domínio e à rota HLS configurados.
+## Instalação
 
-## Ficheiros
+~~~bash
+sudo apt install ./stremioproxywan_0.1.0_all.deb
+sudo stremioproxywan configure \
+ --set wan_host=stream.exemplo.com \
+ --set wan_port=443 \
+ --set lan_host=192.168.10.20 \
+ --set lan_http_port=8080 \
+ --set lan_core_port=11470 \
+ --set backend_scheme=https \
+ --set backend_host=stremio-interno.exemplo.net \
+ --set backend_port=12470 \
+ --set backend_tls_name=stremio-interno.exemplo.net \
+ --set wan_tls_mode=selfsigned \
+ --set http_policy=disabled
+sudo stremioproxywan user add admin
+sudo stremioproxywan check
+sudo stremioproxywan apply
+~~~
 
-- `nginx/str.lusosolutions.com.conf`: virtual host correspondente à configuração validada (sem certificados nem secrets).
-- `session/stremio-proxy-session.py`: emissor/verificador de cookies assinados, serviço local.
-- `systemd/stremio-proxy-session.service`: persistência do serviço.
-- `docs/OPERATIONS.md`: instalação, testes e rollback.
+Os valores de exemplo não são destinos operacionais. É obrigatório configurar os endereços reais antes de aplicar. A instalação do pacote **não altera o Nginx automaticamente**.
 
-## Segurança e limites
+## WAN com ou sem certificado público
 
-**Nunca publicar** `/etc/nginx/.stremio-users`, `/etc/nginx/.stremio-session-key`, conteúdo de certificados privados, chaves VPN ou dados de sessões. Os ficheiros referidos são criados localmente, com permissões restritas.
+- **selfsigned:** cria certificado autoassinado com SAN DNS/IP WAN quando ainda não existe. Os browsers terão de confiar no certificado.
+- **trusted:** utilize um certificado de CA pública ou privada e forneça os caminhos usando wan_cert e wan_key. A renovação de certificados não é automática.
+- **backend HTTPS:** verifica o certificado e o SNI. Para CA privada interna, indique backend_ca. **Não desactive** proxy_ssl_verify para suportar WAN autoassinada.
+- **backend HTTP:** é possível em rede interna protegida, mas não cifra o tráfego proxy→Core.
 
-A porta HTTP 80 mantém o comportamento herdado, **não é protegida pela autenticação HTTPS**. Se houver exposição pública dessa porta, deve ser tratada numa alteração separada, com análise de compatibilidade. Uma sessão por cookie funciona no mesmo domínio; clientes externos que não aceitem ou transmitam o cookie não devem ser considerados suportados automaticamente.
+## Alterar login/password WAN
 
-## Estado da validação
+~~~bash
+sudo stremioproxywan user add admin
+sudo stremioproxywan user password admin
+sudo stremioproxywan user list
+sudo stremioproxywan user add outro
+sudo stremioproxywan user remove outro
+~~~
 
-- Nginx `nginx -t` e `reload`: concluídos.
-- HTTPS sem autenticação: `401`; sessão válida: `200`.
-- Streams byte-range: `206`.
-- HLS master através do domínio público: `200`, playlist não vazia; segmentos HLS observados com `200` durante a reprodução real no WebPlayer.
-- Stremio App interna: validada **directamente** pelo HTTPS `stremio.rocks:12470`, sem utilizar o proxy WAN.
+A password é introduzida duas vezes e guardada com bcrypt (htpasswd). Não é colocada em argumentos da linha de comandos. **Sessões já emitidas continuam válidas até 12 horas**, mesmo após mudar a password.
 
-Este repositório guarda a configuração reprodutível; **não aplica modificações automaticamente ao servidor activo**.
+Abra o endereço HTTPS WAN terminado em /_session/start para iniciar a sessão autenticada.
+
+## Política HTTP WAN
+
+- **disabled:** não publica a porta 80 (por defeito).
+- **redirect:** redirecciona HTTP para HTTPS.
+- **legacy_proxy:** encaminha HTTP para a porta LAN 8080 **sem autenticação**. É uma opção de retrocompatibilidade com risco explícito.
+
+## Operação
+
+O comando apply cria backup da configuração anterior, testa nginx -t e faz reload, sem reiniciar o Stremio. A chave HMAC e utilizadores ficam no host, fora do repositório. O acesso de sessão só escuta em 127.0.0.1:18765. A reescrita HLS mediaURL é limitada ao domínio WAN configurado e não altera outros fluxos.
+
+Arquivos sensíveis que nunca devem ser publicados: users.htpasswd, session.key, chaves TLS privadas e config.json da instalação.
+
+## Construção dos artefactos
+
+~~~bash
+python3 -m unittest discover -s tests -v
+bash packaging/build.sh dist
+(cd dist && sha256sum -c SHA256SUMS)
+~~~
+
+A distribuição produz o pacote .deb (architecture all), um tar.gz de código-fonte e SHA256SUMS. O pacote não inclui passwords, chaves de sessão, certificados ou dados de utilizador.
+
+Ver [Operação e rollback](docs/OPERATIONS.md) e [Notas da versão](docs/RELEASE.md).
