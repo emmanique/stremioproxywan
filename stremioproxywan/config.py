@@ -48,7 +48,7 @@ def require_deployment_values(d):
 def nginx_config(raw):
  d=validate(raw)
  w,lan,b=d['wan_host'],d['lan_host'],d['backend_host']
- source=re.escape(quote('https://'+w,safe=''))
+ source=re.escape(quote('https://'+w+(':'+str(d['wan_port']) if d['wan_port']!=443 else ''),safe=''))
  target=quote(f'http://{lan}:{d["lan_core_port"]}',safe='')
  http=''
  if d['http_policy']=='redirect':
