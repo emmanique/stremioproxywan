@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from .config import CONFIG_FILE, DEFAULTS, validate, nginx_config
+from .config import CONFIG_FILE, DEFAULTS, validate, nginx_config, require_deployment_values
 
 ROOT = Path('/etc/stremioproxywan')
 TARGET = Path('/etc/nginx/sites-available/stremioproxywan.conf')
@@ -83,6 +83,9 @@ def ensure_users():
     shutil.chown(PASSWD, user='root', group='www-data')
 
 def preflight(data):
+    if not CONFIG_FILE.is_file():
+        raise RuntimeError('Configure WAN/LAN details before deploying')
+    require_deployment_values(data)
     for cmd in ('nginx','systemctl','openssl','htpasswd'):
         if not shutil.which(cmd):
             raise RuntimeError(f'Missing required executable: {cmd}')
