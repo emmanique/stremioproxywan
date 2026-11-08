@@ -1,75 +1,40 @@
-# Deployment and rollback
+# Operações
 
-## Scope
+## Requisitos
 
-Deploy on the **WAN Nginx proxy host** only. The code here represents the functioning setup of 2026-11-08. It is not a change to Stremio Core, the VPN Gateway, or the Stremio App. Review hardcoded domain, address, certificate path and local file permissions before using on another host.
+Debian/Ubuntu, Nginx com auth_request, Python 3, openssl, apache2-utils (htpasswd) e systemd. Confirmar DNS/NAT/portas WAN manualmente. O proxy deve alcançar o Stremio na LAN.
 
-## Prerequisites
+## Configuração inicial
 
-Ubuntu/Debian with Nginx including `http_auth_request_module`, Python 3, systemd, reachable Stremio LAN host and an already valid certificate for `str.lusosolutions.com`. Keep public DNS and TLS configuration independently managed.
+1. Instalar o pacote .deb.
+2. Executar stremioproxywan configure --set CHAVE=VALOR com todos os endereços da instalação.
+3. Escolher wan_tls_mode=trusted com ficheiros wan_cert e wan_key, ou wan_tls_mode=selfsigned.
+4. Executar stremioproxywan user add ADMIN, preenchendo a password duas vezes.
+5. Executar stremioproxywan check e stremioproxywan apply.
+6. Testar systemctl is-active nginx stremioproxywan-session.service.
+7. Testar acesso WAN sem sessão (401), login em /_session/start, playlist e segmentos HLS, e byte ranges.
+8. Testar Stremio App LAN directamente no endpoint interno do Core.
 
-## One-time local secrets
+## Actualização
 
-Never commit or export any of these files:
+Configuração e secrets residem em /etc/stremioproxywan e não devem ser incluídos no pacote nem no Git. Não recriar uma password ou HMAC em upgrades automáticos. Configure e aplique alterações após backup.
 
-- `/etc/nginx/.stremio-users` (Basic auth users and password hashes)
-- `/etc/nginx/.stremio-session-key` (HMAC signing key)
-- `/etc/letsencrypt/live/npm-11/privkey.pem` (TLS private key)
+## Password e utilizadores
 
-Example new installation:
+sudo stremioproxywan user password ADMIN
 
-```bash
-sudo install -d -m 755 /usr/local/libexec
-sudo python3 -c 'import secrets,pathlib; p=pathlib.Path("/etc/nginx/.stremio-session-key"); p.write_text(secrets.token_hex(32)); p.chmod(0o640)'
-sudo chown root:www-data /etc/nginx/.stremio-session-key
-sudo htpasswd -c /etc/nginx/.stremio-users YOUR_USERNAME
-sudo chown root:www-data /etc/nginx/.stremio-users
-sudo chmod 640 /etc/nginx/.stremio-users
-```
+sudo stremioproxywan user add OUTRO
 
-Do not run `htpasswd -c` on an existing installation: it truncates the current user database. Preserve the session key during upgrades, otherwise all existing sessions expire.
+sudo stremioproxywan user list
 
-## Controlled installation
+sudo stremioproxywan user remove OUTRO
 
-```bash
-sudo cp -a /etc/nginx/sites-available/str.lusosolutions.com /etc/nginx/sites-available/str.lusosolutions.com.bak-$(date -u +%Y%m%dT%H%M%SZ)
-sudo install -m 755 session/stremio-proxy-session.py /usr/local/libexec/stremio-proxy-session.py
-sudo install -m 644 systemd/stremio-proxy-session.service /etc/systemd/system/stremio-proxy-session.service
-sudo install -m 644 nginx/str.lusosolutions.com.conf /etc/nginx/sites-available/str.lusosolutions.com
-sudo python3 -m py_compile /usr/local/libexec/stremio-proxy-session.py
-sudo systemctl daemon-reload
-sudo systemctl enable --now stremio-proxy-session.service
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-The `sites-enabled` symlink to `sites-available` should already exist or be created separately. Review which file is actually included by `nginx -T`. Never overwrite Nginx configuration before preparing a rollback.
-
-## Basic checks
-
-```bash
-systemctl is-active nginx stremio-proxy-session.service
-curl -sS -o /dev/null -w '%{http_code}\n' https://str.lusosolutions.com/
-curl -sS -o /dev/null -w '%{http_code}\n' https://192-168-1-199.519b6502d940.stremio.rocks:12470/settings
-curl -sS -o /dev/null -w '%{http_code}\n' http://192.168.1.199:8080/settings
-```
-
-Expected: first URL is 401 unauthenticated; LAN and internal HTTPS settings GET are 200. Visit `https://str.lusosolutions.com/_session/start` to issue a signed browser session. Test the same movie externally and internally, including HLS `master.m3u8`, `index.m3u8`, `init.mp4`, `seg0.m4s` and byte ranges. Anonymous requests must continue returning 401.
-
-For the native Stremio App on the LAN, explicitly select `https://192-168-1-199.519b6502d940.stremio.rocks:12470` and click Reload; do not select the proxy domain because native clients may not carry browser cookies. The default `127.0.0.1:11470` points to the client device, not the server.
+Hashes são bcrypt. Sessões existentes continuam válidas por até 12 horas após mudança de password.
 
 ## Rollback
 
-```bash
-sudo cp -a /etc/nginx/sites-available/str.lusosolutions.com.bak-YYYYMMDDTHHMMSSZ /etc/nginx/sites-available/str.lusosolutions.com
-sudo nginx -t && sudo systemctl reload nginx
-```
+O instalador guarda snapshots backup-stremioproxywan-*.conf em /etc/stremioproxywan. Para voltar a uma configuração anterior, copie o snapshot escolhido para /etc/nginx/sites-available/stremioproxywan.conf, execute nginx -t e só então systemctl reload nginx. A falha de nginx -t durante apply provoca reposição automática da configuração anterior.
 
-Keep the session service running unless it is no longer referenced. Rollback is limited to the virtual host; never reset the Stremio database, torrent cache, or VPN host policy.
+## Avisos de segurança
 
-## Risk notes
-
-- Port 80 retains inherited direct forwarding, which lacks the HTTPS authentication boundary. Do not treat it as private or safe to expose on an untrusted WAN.
-- The HLS rewriting map is intentionally narrow and does **not** act as a general URL proxy. Validate query parameter variations before broadening it.
-- The signing service is loopback-only. Restrict access to its files and do not log cookie contents.
-- This is an operational baseline, not a security audit or proof of compatibility with every Stremio client.
+A porta HTTP legacy_proxy não usa autenticação HTTPS. Não exponha sem aceitar explicitamente esse risco. Uma WAN autoassinada exige que cada cliente confie no certificado ou na CA. Não desligue proxy_ssl_verify para HTTPS interno. Nunca exponha 127.0.0.1:18765 e não publique /etc/stremioproxywan, chaves TLS ou bases de password.
