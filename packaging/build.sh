@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 OUT="$(realpath "$OUT")"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-ROOT="$STAGE/stremioproxywan_$VERSION\_all"
+ROOT="$STAGE/stremioproxywan_${VERSION}_all"
 mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/lib/stremioproxywan/stremioproxywan" "$ROOT/usr/bin" "$ROOT/usr/share/doc/stremioproxywan"
 cp stremioproxywan/*.py "$ROOT/usr/lib/stremioproxywan/stremioproxywan/"
 cp README.md "$ROOT/usr/share/doc/stremioproxywan/README.md"
@@ -29,9 +29,9 @@ export PYTHONPATH=/usr/lib/stremioproxywan
 exec /usr/bin/python3 -m stremioproxywan.cli "$@"
 EOF
 chmod 755 "$ROOT/usr/bin/stremioproxywan"
-dpkg-deb --build --root-owner-group "$ROOT" "$OUT/stremioproxywan_$VERSION\_all.deb" >/dev/null
+dpkg-deb --build --root-owner-group "$ROOT" "$OUT/stremioproxywan_${VERSION}_all.deb" >/dev/null
 ARCHIVE="$OUT/stremioproxywan-$VERSION.tar.gz"
 tar --sort=name --mtime='UTC 2026-11-08' --owner=0 --group=0 --numeric-owner \
  -czf "$ARCHIVE" README.md VERSION stremioproxywan packaging docs tests
-(cd "$OUT" && sha256sum "stremioproxywan_$VERSION\_all.deb" "stremioproxywan-$VERSION.tar.gz" > SHA256SUMS)
+(cd "$OUT" && sha256sum "stremioproxywan_${VERSION}_all.deb" "stremioproxywan-$VERSION.tar.gz" > SHA256SUMS)
 echo "Built $OUT"
